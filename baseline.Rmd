@@ -1,0 +1,274 @@
+---
+title: "Untitled"
+output:
+  html_document:
+    number_sections: yes
+    fig_caption: yes
+    toc: yes
+    toc_float:
+      collapsed: no
+      smooth_scroll: no
+    fig_width: 5
+    fig_height: 4
+    theme: flatly
+    highlight: tango
+    code_folding: show
+  pdf_document:
+    toc: yes
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+
+```{r}
+library(tidyverse)
+library(data.table)
+library(GGally)
+library(tidymodels)
+
+```
+
+
+```{r}
+df_train <- fread('data/df_train.csv') %>% as_tibble()
+df_test <- fread('data/df_test.csv') %>% as_tibble()
+
+df_train %>% dim() 
+df_test %>% dim()
+
+df_test <- df_test %>% 
+        bind_cols(target = rep(NA, dim(df_test)[1]))
+
+```
+
+
+
+
+```{r}
+all_dt = rbindlist(
+  list(df_train, df_test),
+  use.names = T, fill = T
+)
+
+i_train = 1:nrow(df_train)
+i_test = (nrow(df_train)+1):nrow(all_dt)
+
+splits = make_splits(
+  ind = list(analysis = i_train, assessment = i_test),
+  data= all_dt
+)
+
+
+train <- training(splits)
+test <- testing(splits)
+```
+
+
+```{r}
+df_train %>% mutate(target = as.factor(target)) %>% summary()
+```
+
+
+
+# person_attribute 
+```{r}
+df_train %>% 
+        select(contains('person_attribute')) %>% 
+        gather() %>%
+        ggplot() +
+        geom_bar(mapping = aes(x=value,fill=key), color="black") +
+        facet_wrap(~ key, scales = "free") +
+        theme_minimal() +
+        theme(legend.position = 'none') 
+```
+
+# persion_prefer
+```{r}
+df_train %>% 
+        select(contains('person_prefer')) %>% 
+        .[, 1:9] %>% 
+        gather() %>%
+        ggplot() +
+        geom_histogram(mapping = aes(x=value,fill=key), color="black") +
+        facet_wrap(~ key, scales = "free") +
+        theme_minimal() +
+        theme(legend.position = 'none') 
+```
+
+
+```{r}
+df_train %>% 
+        select(contains('person_prefer')) %>% 
+        .[, 10:18] %>% 
+        gather() %>%
+        ggplot() +
+        geom_histogram(mapping = aes(x=value,fill=key), color="black") +
+        facet_wrap(~ key, scales = "free") +
+        theme_minimal() +
+        theme(legend.position = 'none') 
+
+```
+```{r}
+df_train %>% 
+        select(contains('person_prefer')) %>% 
+        .[, 19:28] %>% 
+        gather() %>%
+        ggplot() +
+        geom_histogram(mapping = aes(x=value,fill=key), color="black") +
+        facet_wrap(~ key, scales = "free") +
+        theme_minimal() +
+        theme(legend.position = 'none') 
+```
+
+
+
+# contents_attribute
+```{r}
+df_train %>% 
+        select(contains('contents_attribute')) %>% 
+        #dim() # 501951     21
+        .[, 1:10] %>% 
+        gather() %>%
+        ggplot() +
+        geom_histogram(mapping = aes(x=value,fill=key), color="black") +
+        facet_wrap(~ key, scales = "free") +
+        theme_minimal() +
+        theme(legend.position = 'none') 
+
+
+```
+
+```{r}
+df_train %>% 
+        select(contains('contents_attribute')) %>% 
+        #dim() # 501951     21
+        .[, 1:10] %>% 
+        gather() %>% 
+        bind_cols(rep(df_train$target, 10)) %>%
+        rename(target = ...3) %>%
+        mutate(target = as.factor(target)) %>% 
+        ggplot() +
+        geom_boxplot(mapping = aes(x= target, y =value, fill=key), color="black") +
+        facet_wrap(~ key, scales = "free") +
+        theme_minimal() +
+        theme(legend.position = 'none')
+```
+
+```{r}
+df_train %>% 
+        select(contains('contents_attribute')) %>% 
+        #dim() # 501951     21
+        .[, 11:21] %>% 
+        gather() %>%
+        ggplot() +
+        geom_histogram(mapping = aes(x=value,fill=key), color="black") +
+        facet_wrap(~ key, scales = "free") +
+        theme_minimal() +
+        theme(legend.position = 'none') 
+
+
+
+```
+
+
+```{r}
+df_train %>% 
+        select(contains('contents_attribute')) %>% 
+        #dim() # 501951     21
+        .[, 11:21] %>% 
+        gather() %>% 
+        bind_cols(rep(df_train$target, 11)) %>%
+        rename(target = ...3) %>%
+        mutate(target = as.factor(target)) %>% 
+        ggplot() +
+        geom_boxplot(mapping = aes(x= target, y =value, fill=key), color="black") +
+        facet_wrap(~ key, scales = "free") +
+        theme_minimal() +
+        theme(legend.position = 'none')
+```
+
+
+
+
+```{r}
+base_rec <- df_train %>% 
+        recipe(target ~ .) %>% 
+        step_rm(id, person_rn, contents_rn, contents_open_dt) %>% 
+        step_mutate_at(c("person_attribute_a", "person_prefer_f", "person_prefer_g", 
+                         "contents_attribute_i", "contents_attribute_a", "contents_attribute_j", "contents_attribute_k", "target"), fn = as.factor) %>% 
+        step_nzv(all_predictors())
+        
+train <- base_rec %>% prep() %>% juice()        
+test <- base_rec %>% prep() %>% bake(new_data = df_test)   
+
+#train %>% str()
+```
+
+
+
+
+# logistic regression 
+
+```{r}
+fitted_logistic <- logistic_reg() %>%
+        set_engine("glm") %>%
+        set_mode("classification") %>%
+        fit(target~., data = train)
+
+tidy(fitted_logistic, exponentiate = T)
+
+
+pred_logistic <- predict(fitted_logistic,
+                      new_data = test,
+                      type = "class")
+```
+
+```{r, echo = T}
+submission <- read_csv('data/sample_submission.csv')
+submission['target'] <- pred_logistic['.pred_class'] 
+write.csv(submission, 'submission/submission.csv', row.names = F)
+```
+
+
+
+
+```{r, echo = T}
+set.seed(234)
+val_set <- vfold_cv(train, v = 5, strata = target)
+
+penal_logistic <- logistic_reg(penalty = tune(), mixture = tune()) %>%
+        set_engine("glmnet") %>%
+        set_mode("classification")
+
+penal_workflow <- workflow() %>% 
+        add_model(penal_logistic) %>% 
+        add_recipe(base_rec)
+
+
+penal_reg_grid <- tibble(penalty = 10^seq(-4,-1,length.out = 30), mixture = 10^seq(-4,-1,length.out = 30))
+
+
+penal_logistic_res <- penal_workflow %>% 
+  tune_grid(val_set,
+            grid = penal_reg_grid,
+            control = control_grid(save_pred = T),
+            metrics = metric_set(roc_auc))
+
+
+tidy(fitted_logistic, exponentiate = T)
+
+
+pred_logistic <- predict(fitted_logistic,
+                      new_data = test,
+                      type = "class")
+```
+
+
+
+
+
+
+
+
+
